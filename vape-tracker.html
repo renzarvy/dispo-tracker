@@ -1,0 +1,289 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Vape Sales Tracker</title>
+  <link rel="manifest" href="manifest.json" />
+  <link rel="icon" href="icon.png" type="image/png" />
+  <meta name="theme-color" content="#1f1f1f" />
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <style>
+    body {
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      background: linear-gradient(135deg, #0d0d0d, #1a1a1a);
+      color: #f0f0f0;
+      margin: 0;
+      padding: 20px;
+    }
+    .container {
+      max-width: 600px;
+      margin: auto;
+      background: rgba(255, 255, 255, 0.06);
+      padding: 30px 25px;
+      border-radius: 16px;
+      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.4);
+      backdrop-filter: blur(14px);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+    }
+    h2, h3, h4 {
+      color: #90ee90;
+    }
+    input, button, select {
+      width: 100%;
+      padding: 10px;
+      margin-top: 10px;
+      margin-bottom: 10px;
+      border: none;
+      border-radius: 8px;
+      font-size: 14px;
+    }
+    input, select {
+      background-color: #2a2a2a;
+      color: #f0f0f0;
+    }
+    button {
+      background-color: #28a745;
+      color: white;
+      font-weight: bold;
+      cursor: pointer;
+      transition: background 0.3s ease;
+    }
+    button:hover {
+      background-color: #218838;
+    }
+    .summary, .inventory-display {
+      margin-top: 20px;
+      background: rgba(255,255,255,0.05);
+      padding: 15px;
+      border-radius: 10px;
+    }
+    .inventory-display span.low {
+      color: #ff4d4d;
+      font-weight: bold;
+    }
+    table {
+      width: 100%;
+      margin-top: 15px;
+      border-collapse: collapse;
+      font-size: 14px;
+    }
+    th, td {
+      border: 1px solid rgba(255,255,255,0.15);
+      padding: 6px;
+      text-align: center;
+    }
+    th {
+      background-color: #333;
+    }
+    canvas {
+      margin-top: 20px;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h2>Disposable Vape Sales Tracker</h2>
+
+    <div id="inventorySetup">
+      <h3>Set Initial Inventory Per Flavor</h3>
+      <input type="number" id="invMint" placeholder="Mint (pcs)" />
+      <input type="number" id="invStrawberry" placeholder="Strawberry (pcs)" />
+      <input type="number" id="invGrape" placeholder="Grape (pcs)" />
+      <input type="number" id="invWatermelon" placeholder="Watermelon (pcs)" />
+      <button onclick="saveInventory()">Save Inventory</button>
+      <button onclick="resetDay()" style="margin-top: 10px; background-color: #dc3545;">
+        🔄 Reset Day (Clear Sales & Inventory)
+      </button>
+    </div>
+
+    <div id="salesSection" style="display:none;">
+      <label for="flavor">Flavor:</label>
+      <select id="flavor">
+        <option value="Mint">Mint</option>
+        <option value="Strawberry">Strawberry</option>
+        <option value="Grape">Grape</option>
+        <option value="Watermelon">Watermelon</option>
+      </select>
+
+      <label for="price">Selling Price (₱):</label>
+      <input type="number" id="price" placeholder="Enter price sold..." />
+      <button onclick="addSale()">Add Sale</button>
+
+      <div class="summary">
+        <p><strong>Total Sales:</strong> ₱<span id="sales">0</span></p>
+        <p><strong>Total Profit:</strong> <span style="color:#90ee90;">₱<span id="profit">0</span></span></p>
+      </div>
+
+      <div class="inventory-display">
+        <h4>🧮 Inventory Left:</h4>
+        <p id="invDisplay"></p>
+      </div>
+
+      <h3>🗓️ Daily Sales Log</h3>
+      <table id="logTable">
+        <tr><th>Time</th><th>Flavor</th><th>₱ Price</th><th>₱ Profit</th><th>Action</th></tr>
+      </table>
+
+      <canvas id="profitChart" height="200"></canvas>
+
+      <button onclick="exportCSV()" style="margin-top: 20px; background-color: #007bff;">
+        📥 Download Daily Sales as CSV
+      </button>
+      <button onclick="resetDay()" style="margin-top: 10px; background-color: #dc3545;">
+        🔄 Reset Day (Clear Sales & Inventory)
+      </button>
+    </div>
+  </div>
+
+  
+<script>
+  const costPerUnit = 205;
+  let salesLog = JSON.parse(localStorage.getItem("salesLog") || "[]");
+  let inventory = JSON.parse(localStorage.getItem("inventory") || "{}");
+
+  const flavorInput = document.getElementById("flavor");
+  const priceInput = document.getElementById("price");
+  const salesDisplay = document.getElementById("sales");
+  const profitDisplay = document.getElementById("profit");
+  const invDisplay = document.getElementById("invDisplay");
+  const logTable = document.getElementById("logTable");
+  const salesSection = document.getElementById("salesSection");
+
+  function saveInventory() {
+    inventory = {
+      Mint: +document.getElementById("invMint").value || 0,
+      Strawberry: +document.getElementById("invStrawberry").value || 0,
+      Grape: +document.getElementById("invGrape").value || 0,
+      Watermelon: +document.getElementById("invWatermelon").value || 0,
+    };
+    localStorage.setItem("inventory", JSON.stringify(inventory));
+    updateInventoryDisplay();
+    salesSection.style.display = "block";
+  }
+
+  function updateInventoryDisplay() {
+    let html = "";
+    for (let flavor in inventory) {
+      const value = inventory[flavor];
+      const warning = value <= 3 ? "low" : "";
+      html += `${flavor}: <span class="${warning}">${value}</span><br>`;
+    }
+    invDisplay.innerHTML = html;
+  }
+
+  function addSale() {
+    const flavor = flavorInput.value;
+    const price = +priceInput.value;
+    if (!price || inventory[flavor] <= 0) {
+      alert("Invalid sale. Check price and inventory.");
+      return;
+    }
+
+    const profit = price - costPerUnit;
+    const time = new Date().toLocaleTimeString();
+
+    salesLog.push({ flavor, price, profit, time });
+    inventory[flavor]--;
+    localStorage.setItem("salesLog", JSON.stringify(salesLog));
+    localStorage.setItem("inventory", JSON.stringify(inventory));
+
+    updateInventoryDisplay();
+    renderLog();
+    updateSummary();
+    renderChart();
+    priceInput.value = "";
+  }
+
+  function renderLog() {
+    logTable.innerHTML = `<tr><th>Time</th><th>Flavor</th><th>₱ Price</th><th>₱ Profit</th><th>Action</th></tr>`;
+    salesLog.forEach((sale, index) => {
+      const row = logTable.insertRow();
+      row.innerHTML = `
+        <td>${sale.time}</td>
+        <td>${sale.flavor}</td>
+        <td>₱${sale.price}</td>
+        <td>₱${sale.profit}</td>
+        <td><button onclick="removeSale(${index})">❌</button></td>
+      `;
+    });
+  }
+
+  function removeSale(index) {
+    const sale = salesLog.splice(index, 1)[0];
+    inventory[sale.flavor]++;
+    localStorage.setItem("salesLog", JSON.stringify(salesLog));
+    localStorage.setItem("inventory", JSON.stringify(inventory));
+    renderLog();
+    updateSummary();
+    updateInventoryDisplay();
+    renderChart();
+  }
+
+  function updateSummary() {
+    const totalSales = salesLog.reduce((sum, s) => sum + s.price, 0);
+    const totalProfit = salesLog.reduce((sum, s) => sum + s.profit, 0);
+    salesDisplay.textContent = totalSales;
+    profitDisplay.textContent = totalProfit;
+  }
+
+  function resetDay() {
+    if (!confirm("Are you sure you want to reset all data?")) return;
+    localStorage.removeItem("salesLog");
+    localStorage.removeItem("inventory");
+    salesLog = [];
+    inventory = {};
+    location.reload();
+  }
+
+  function exportCSV() {
+    let csv = "Time,Flavor,Price,Profit\n";
+    salesLog.forEach(s => {
+      csv += `${s.time},${s.flavor},${s.price},${s.profit}\n`;
+    });
+    const blob = new Blob([csv], { type: "text/csv" });
+    const link = document.createElement("a");
+    link.href = URL.createObjectURL(blob);
+    link.download = "daily_sales.csv";
+    link.click();
+  }
+
+  function renderChart() {
+    const ctx = document.getElementById("profitChart").getContext("2d");
+    const labels = salesLog.map((_, i) => `#${i + 1}`);
+    const profits = salesLog.map(s => s.profit);
+
+    if (window.myChart) window.myChart.destroy();
+    window.myChart = new Chart(ctx, {
+      type: 'line',
+      data: {
+        labels,
+        datasets: [{
+          label: 'Daily Profit',
+          data: profits,
+          backgroundColor: 'rgba(144, 238, 144, 0.2)',
+          borderColor: '#90ee90',
+          borderWidth: 2,
+          tension: 0.3,
+        }]
+      },
+      options: {
+        scales: {
+          y: { beginAtZero: true }
+        }
+      }
+    });
+  }
+
+  window.onload = () => {
+    if (Object.keys(inventory).length) {
+      salesSection.style.display = "block";
+      updateInventoryDisplay();
+      renderLog();
+      updateSummary();
+      renderChart();
+    }
+  };
+</script>
+</body>
+</html>
